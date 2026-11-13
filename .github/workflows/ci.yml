@@ -15,7 +15,7 @@ env:
 
 jobs:
   test:
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     strategy:
       fail-fast: false
       matrix:
@@ -36,7 +36,7 @@ jobs:
           cargo run -p af-cli -- read Cargo.toml --meta --json
 
   build:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:
@@ -60,10 +60,8 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Build & Test
-        run: |
-          cargo build -p af-cli --release --target ${{ matrix.target }} --verbose
-          cargo test --workspace --target ${{ matrix.target }} --verbose
+      - name: Build release binary
+        run: cargo build -p af-cli --release --target ${{ matrix.target }} --verbose
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -85,6 +83,7 @@ jobs:
           name="${BIN_NAME}-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/${BIN_NAME}" "dist/$name/"
+          chmod +x "dist/$name/${BIN_NAME}"
           cp README.md LICENSE "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && shasum -a 256 "$name.tar.gz" | awk '{print tolower($1)"  "$2}' > "$name.tar.gz.sha256")
@@ -93,23 +92,24 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BIN_NAME }}-${{ matrix.target }}
-          path: |
-            dist/*.zip
-            dist/*.tar.gz
-            dist/*.sha256
+          path: dist/*
+          if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+      - name: List artifacts
+        run: ls -la artifacts
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: |
-            artifacts/*
+          fail_on_unmatched_files: true
+          files: artifacts/*
