@@ -30,9 +30,10 @@ cargo run -p af-cli -- --help
 ## CI / Release
 
 - 工作流：`.github/workflows/ci.yml`（CI & Release 合并）
-  - `push`/`pull_request`：在 Windows/macOS 上构建、测试并执行 CLI smoke test
+  - `push` 到非 `master` 分支 / `pull_request`：在 Windows/macOS 上构建、测试并执行 CLI smoke test
+  - `push` 到 `master`：自动读取 `Cargo.toml` 版本，创建并推送 `vX.Y.Z` tag（若不存在），由 tag 触发 Release 流程
   - `tag v*`：构建 Windows x64 与 macOS x64/arm64 发布产物，打包 `.zip`/`.tar.gz` + `.sha256`，自动创建 GitHub Release
-  - `workflow_dispatch`：输入版本号（如 `v0.1.0`）可自动创建并推送 tag，随后触发 Release 流程
+  - `workflow_dispatch`：可选输入版本号（留空则使用 `Cargo.toml` 版本）自动创建并推送 tag，随后触发 Release 流程
 - 本地打包脚本：`scripts/release.ps1`（Windows）、`scripts/release.sh`（macOS/Linux）
 
 ## Scoop（Windows）
