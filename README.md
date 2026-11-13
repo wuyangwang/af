@@ -31,7 +31,8 @@ cargo run -p af-cli -- --help
 
 - 工作流：`.github/workflows/ci.yml`（CI & Release 合并）
   - `push`/`pull_request`：在 Windows/macOS 上构建、测试并执行 CLI smoke test
-  - `tag v*`：构建并测试 Windows x64 与 macOS x64/arm64 发布产物，打包 `.zip`/`.tar.gz` + `.sha256`，自动创建 GitHub Release
+  - `tag v*`：构建 Windows x64 与 macOS x64/arm64 发布产物，打包 `.zip`/`.tar.gz` + `.sha256`，自动创建 GitHub Release
+  - `workflow_dispatch`：输入版本号（如 `v0.1.0`）可自动创建并推送 tag，随后触发 Release 流程
 - 本地打包脚本：`scripts/release.ps1`（Windows）、`scripts/release.sh`（macOS/Linux）
 
 ## Scoop（Windows）
