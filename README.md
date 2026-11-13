@@ -35,6 +35,7 @@ cargo run -p af-cli -- --help
   - `tag v*`：构建 Windows x64 与 macOS x64/arm64 发布产物，打包 `.zip`/`.tar.gz` + `.sha256`，自动创建 GitHub Release
   - `workflow_dispatch`：可选输入版本号（留空则使用 `Cargo.toml` 版本）自动创建并推送 tag，随后触发 Release 流程
 - 本地打包脚本：`scripts/release.ps1`（Windows）、`scripts/release.sh`（macOS/Linux）
+- 本地一键发版脚本：`scripts/bump-release.ps1` / `scripts/bump-release.sh`（更新版本号、提交 `chore(release): vX.Y.Z`、创建 tag 并 push commit+tag）
 
 ## Scoop（Windows）
 

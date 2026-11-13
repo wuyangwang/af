@@ -23,6 +23,9 @@ jobs:
   create-tag:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master' && !startsWith(github.event.head_commit.message || '', 'chore(release):'))
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      released: ${{ steps.tag.outputs.released }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,6 +48,7 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Create and push tag if missing
+        id: tag
         shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -54,11 +58,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --tags origin
           if git rev-parse "$VERSION" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "$VERSION" >/dev/null 2>&1; then
-            echo "Tag $VERSION already exists; skipping."
+            echo "Tag $VERSION already exists; skipping release build."
+            echo "released=false" >> "$GITHUB_OUTPUT"
           else
             git tag "$VERSION"
             git push origin "$VERSION"
             echo "Created and pushed tag $VERSION"
+            echo "released=true" >> "$GITHUB_OUTPUT"
           fi
 
   test:
@@ -83,7 +89,8 @@ jobs:
           cargo run -p af-cli -- read Cargo.toml --meta --json
 
   build:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: always() && ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (needs.create-tag.result == 'success' && needs.create-tag.outputs.released == 'true'))
+    needs: [create-tag]
     strategy:
       fail-fast: false
       matrix:
@@ -99,7 +106,18 @@ jobs:
             bin_ext: ""
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Resolve release tag
+        id: rel
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ needs.create-tag.outputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.rel.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -113,8 +131,10 @@ jobs:
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.rel.outputs.tag }}
         run: |
-          $name = "${{ env.BIN_NAME }}-${{ github.ref_name }}-${{ matrix.target }}"
+          $name = "${{ env.BIN_NAME }}-$env:RELEASE_TAG-${{ matrix.target }}"
           New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ env.BIN_NAME }}${{ matrix.bin_ext }}" "dist/$name/"
           Copy-Item "README.md","LICENSE" "dist/$name/"
@@ -125,9 +145,11 @@ jobs:
       - name: Package (macOS)
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.rel.outputs.tag }}
         run: |
           set -euo pipefail
-          name="${BIN_NAME}-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="${BIN_NAME}-${RELEASE_TAG}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/${BIN_NAME}" "dist/$name/"
           chmod +x "dist/$name/${BIN_NAME}"
@@ -143,11 +165,22 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: always() && ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (needs.create-tag.result == 'success' && needs.create-tag.outputs.released == 'true'))
+    needs: [create-tag, build]
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve release tag
+        id: rel
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ needs.create-tag.outputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.rel.outputs.tag }}
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -157,6 +190,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.rel.outputs.tag }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: artifacts/*
