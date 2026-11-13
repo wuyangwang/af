@@ -49,7 +49,7 @@ fn slice_lines(content: &str, start: Option<usize>, end: Option<usize>) -> (Stri
 }
 
 pub fn run(args: ReadArgs, json_mode: bool) -> Result<()> {
-    let result = read_text_file(&args.path, args.encoding.as_deref())?;
+    let result = read_text_file(&args.path, args.encoding.as_deref()).map_err(|e| anyhow::anyhow!(e))?;
     let (content, start_line, end_line) = slice_lines(&result.content, args.start, args.end);
 
     if json_mode {

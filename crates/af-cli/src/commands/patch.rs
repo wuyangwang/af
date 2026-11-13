@@ -141,32 +141,39 @@ fn apply_unified_diff(original: &str, diff: &str) -> Result<(String, usize)> {
 
 pub fn run(args: PatchArgs, json_mode: bool) -> Result<()> {
     let input = read_input_text(&args)?;
-    let existing = read_text_file(&args.path, None)?;
+    let existing = read_text_file(&args.path, None).map_err(|e| anyhow::anyhow!(e))?;
     if let Some(expected) = &args.expected_hash {
         if &existing.meta.sha256 != expected {
-            bail!("hash conflict: expected {} but found {}", expected, existing.meta.sha256);
+            return Err(anyhow::anyhow!(af_core::errors::AfError::Conflict(format!(
+                "hash conflict: expected {} but found {}",
+                expected, existing.meta.sha256
+            ))));
         }
     }
 
     let (mut content, total_ops) = if args.spec.is_some() || input.trim_start().starts_with('{') {
-        let spec: PatchSpec = serde_json::from_str(&input)?;
+        let spec: PatchSpec = serde_json::from_str(&input).map_err(|e| anyhow::anyhow!(af_core::errors::AfError::InvalidInput(e.to_string())))?;
         let mut c = existing.content.clone();
         let mut ops = 0usize;
         for op in &spec.operations {
             if op.op_type != "replace" {
-                bail!("unsupported operation type: {}", op.op_type);
+                return Err(anyhow::anyhow!(af_core::errors::AfError::InvalidInput(format!(
+                    "unsupported operation type: {}", op.op_type
+                ))));
             }
             let count = c.matches(&op.old).count();
             let expected = op.expected_matches.unwrap_or(1);
             if count != expected {
-                bail!("match count mismatch: expected {}, found {}", expected, count);
+                return Err(anyhow::anyhow!(af_core::errors::AfError::MatchCount(format!(
+                    "expected {}, found {}", expected, count
+                ))));
             }
             c = c.replace(&op.old, &op.new);
             ops += 1;
         }
         (c, ops)
     } else {
-        apply_unified_diff(&existing.content, &input)?
+        apply_unified_diff(&existing.content, &input).map_err(|e| anyhow::anyhow!(af_core::errors::AfError::General(e.to_string())))?
     };
 
     let (label, bom, eol_style) = if args.normalize {
@@ -185,6 +192,8 @@ pub fn run(args: PatchArgs, json_mode: bool) -> Result<()> {
                 "operations": total_ops, "beforeHash": existing.meta.sha256, "afterHash": new_hash
             }));
         } else {
+            let diff = af_render::diff::unified_diff(&existing.content, &content, &args.path.to_string_lossy());
+            print!("{diff}");
             println!("dry-run: {} operation(s), {} -> {}", total_ops, existing.meta.sha256, new_hash);
         }
         return Ok(());

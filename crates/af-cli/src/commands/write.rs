@@ -69,17 +69,24 @@ fn parse_eol(s: &str) -> Option<NewlineStyle> {
 
 pub fn run(args: WriteArgs, json_mode: bool) -> Result<()> {
     if args.path.exists() && !args.force {
-        bail!("target exists; pass --force to overwrite");
+        return Err(anyhow::anyhow!(af_core::errors::AfError::Safety(
+            "target exists; pass --force to overwrite".into()
+        )));
     }
     let input = read_input(&args)?;
     if let Some(expected) = &args.expected_hash {
         if args.path.exists() {
-            let existing = af_core::reader::read_text_file(&args.path, None)?;
+            let existing = af_core::reader::read_text_file(&args.path, None).map_err(|e| anyhow::anyhow!(e))?;
             if &existing.meta.sha256 != expected {
-                bail!("hash conflict: expected {} but found {}", expected, existing.meta.sha256);
+                return Err(anyhow::anyhow!(af_core::errors::AfError::Conflict(format!(
+                    "hash conflict: expected {} but found {}",
+                    expected, existing.meta.sha256
+                ))));
             }
         } else {
-            bail!("--expected-hash provided but target file does not exist");
+            return Err(anyhow::anyhow!(af_core::errors::AfError::InvalidInput(
+                "--expected-hash provided but target file does not exist".into()
+            )));
         }
     }
     let mode = if args.strict {
@@ -109,7 +116,7 @@ pub fn run(args: WriteArgs, json_mode: bool) -> Result<()> {
         return Ok(());
     }
 
-    let outcome = write_with_options(&args.path, &input, &opts)?;
+    let outcome = write_with_options(&args.path, &input, &opts).map_err(|e| anyhow::anyhow!(e))?;
 
     if json_mode {
         println!("{}", json!({

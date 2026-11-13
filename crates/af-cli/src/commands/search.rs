@@ -30,6 +30,9 @@ pub struct SearchArgs {
     /// Disable ignore-file filtering
     #[arg(long)]
     pub no_ignore: bool,
+    /// Case-insensitive matching
+    #[arg(short = 'i', long)]
+    pub ignore_case: bool,
 }
 
 pub fn run(args: SearchArgs, json_mode: bool) -> Result<()> {
@@ -39,6 +42,7 @@ pub fn run(args: SearchArgs, json_mode: bool) -> Result<()> {
         file_type: args.file_type,
         before: args.before.unwrap_or(0),
         after: args.after.unwrap_or(0),
+        ignore_case: args.ignore_case,
     };
     let result = search(&args.pattern, &args.path, args.regex, &filters)?;
     if json_mode {

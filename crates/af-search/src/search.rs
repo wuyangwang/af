@@ -38,9 +38,9 @@ pub fn search(
     filters: &SearchFilters,
 ) -> Result<SearchResult> {
     let re = if is_regex {
-        RegexBuilder::new(pattern).build()?
+        RegexBuilder::new(pattern).case_insensitive(filters.ignore_case).build()?
     } else {
-        RegexBuilder::new(&regex::escape(pattern)).build()?
+        RegexBuilder::new(&regex::escape(pattern)).case_insensitive(filters.ignore_case).build()?
     };
 
     let mut builder = WalkBuilder::new(root);

@@ -7,4 +7,5 @@ pub struct SearchFilters {
     pub file_type: Option<String>,
     pub before: usize,
     pub after: usize,
+    pub ignore_case: bool,
 }

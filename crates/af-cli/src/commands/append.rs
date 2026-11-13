@@ -70,14 +70,19 @@ pub fn run(args: AppendArgs, json_mode: bool) -> Result<()> {
         return Ok(());
     }
 
-    let existing = read_text_file(&args.path, None)?;
+    let existing = read_text_file(&args.path, None).map_err(|e| anyhow::anyhow!(e))?;
     if let Some(expected) = &args.expected_hash {
         if &existing.meta.sha256 != expected {
-            bail!("hash conflict: expected {} but found {}", expected, existing.meta.sha256);
+            return Err(anyhow::anyhow!(af_core::errors::AfError::Conflict(format!(
+                "hash conflict: expected {} but found {}",
+                expected, existing.meta.sha256
+            ))));
         }
     }
     if existing.meta.mixed_newlines {
-        bail!("mixed newline file: refuse to append without explicit normalization strategy");
+        return Err(anyhow::anyhow!(af_core::errors::AfError::Safety(
+            "mixed newline file: refuse to append without explicit normalization strategy".into()
+        )));
     }
     let eol = existing.newline.sequence();
     if args.ensure_newline {
