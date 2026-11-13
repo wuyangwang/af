@@ -12,5 +12,5 @@ Cargo.lock.bak
 .DS_Store
 Thumbs.db
 
-# Local config overrides
-af.config.local.json
+
+
