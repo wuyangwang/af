@@ -1,3 +1,4 @@
+use af_render::json as rjson;
 use af_search::filters::SearchFilters;
 use af_search::search::search;
 use anyhow::Result;
@@ -39,6 +40,7 @@ pub struct SearchArgs {
 }
 
 pub fn run(args: SearchArgs, json_mode: bool) -> Result<()> {
+    af_core::path_safety::ensure_safe_path(&args.path).map_err(|e| anyhow::anyhow!(e))?;
     let filters = SearchFilters {
         hidden: args.hidden,
         no_ignore: args.no_ignore,
@@ -50,14 +52,16 @@ pub fn run(args: SearchArgs, json_mode: bool) -> Result<()> {
     };
     let result = search(&args.pattern, &args.path, args.regex, &filters)?;
     if json_mode {
-        println!("{}", json!({
+        let out = json!({
             "ok": true,
             "command": "search",
             "pattern": args.pattern,
-            "path": args.path,
+            "path": args.path.to_string_lossy(),
             "matches": result.matches
-        }));
+        });
+        println!("{}", rjson::success(out));
     } else {
+        let mut last_file = String::new();
         for m in &result.matches {
             for b in &m.before {
                 println!("{}-{}-{}", m.path, b.line_number, b.text);
@@ -69,10 +73,12 @@ pub fn run(args: SearchArgs, json_mode: bool) -> Result<()> {
             if !m.before.is_empty() || !m.after.is_empty() {
                 println!("--");
             }
+            last_file = m.path.clone();
         }
         if result.matches.is_empty() {
             println!("no matches");
         }
+        let _ = last_file;
     }
     Ok(())
 }

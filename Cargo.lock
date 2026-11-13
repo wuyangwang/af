@@ -19,6 +19,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]
@@ -58,6 +59,7 @@ dependencies = [
  "af-core",
  "anyhow",
  "grep",
+ "grep-matcher",
  "grep-printer",
  "grep-regex",
  "grep-searcher",

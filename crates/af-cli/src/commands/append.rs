@@ -4,6 +4,7 @@ use af_core::writer::write_new_file;
 use af_core::atomic::atomic_write;
 use af_core::hash::sha256_hex;
 use af_core::newline::NewlineStyle;
+use af_render::json as rjson;
 use anyhow::{bail, Result};
 use clap::Args;
 use serde_json::json;
@@ -48,22 +49,28 @@ fn read_input(args: &AppendArgs) -> Result<String> {
 }
 
 pub fn run(args: AppendArgs, json_mode: bool) -> Result<()> {
+    af_core::path_safety::ensure_safe_path(&args.path).map_err(|e| anyhow::anyhow!(e))?;
     let mut input = read_input(&args)?;
     if !args.path.exists() {
         if args.ensure_newline && !input.ends_with('\n') && !input.ends_with('\r') {
             input.push('\n');
         }
+        let planned = af_core::writer::plan_write(&args.path, &input, &af_core::writer::WriteOptions::default())
+            .map_err(|e| anyhow::anyhow!(e))?;
         if args.dry_run {
             if json_mode {
-                println!("{}", json!({"ok": true, "command": "append", "path": args.path, "dryRun": true, "created": true}));
+                let out = json!({"ok": true, "command": "append", "path": args.path.to_string_lossy(), "dryRun": true, "created": true, "bytes": planned.meta.size, "encoding": planned.meta.encoding, "bom": planned.meta.bom, "eol": planned.meta.eol, "sha256": planned.meta.sha256, "contentToAppend": input});
+                println!("{}", rjson::success(out));
             } else {
-                println!("dry-run: would create and append to {}", args.path.display());
+                println!("dry-run: would create {} and append {} bytes", args.path.display(), input.len());
+                println!("encoding: {} bom: {} eol: {} sha256: {}", planned.meta.encoding, planned.meta.bom, planned.meta.eol, planned.meta.sha256);
             }
             return Ok(());
         }
         let outcome = write_new_file(&args.path, &input)?;
         if json_mode {
-            println!("{}", json!({"ok": true, "command": "append", "path": args.path, "created": true, "bytesWritten": outcome.bytes_written, "sha256": outcome.meta.sha256}));
+            let out = json!({"ok": true, "command": "append", "path": args.path.to_string_lossy(), "created": true, "bytesWritten": outcome.bytes_written, "sha256": outcome.meta.sha256, "encoding": outcome.meta.encoding, "bom": outcome.meta.bom, "eol": outcome.meta.eol});
+            println!("{}", rjson::success(out));
         } else {
             println!("created and appended {} bytes to {}", outcome.bytes_written, args.path.display());
         }
@@ -73,41 +80,56 @@ pub fn run(args: AppendArgs, json_mode: bool) -> Result<()> {
     let existing = read_text_file(&args.path, None).map_err(|e| anyhow::anyhow!(e))?;
     if let Some(expected) = &args.expected_hash {
         if &existing.meta.sha256 != expected {
-            return Err(anyhow::anyhow!(af_core::errors::AfError::Conflict(format!(
-                "hash conflict: expected {} but found {}",
-                expected, existing.meta.sha256
-            ))));
+            return Err(anyhow::anyhow!(af_core::errors::AfError::Conflict {
+                code: "HASH_CONFLICT".into(),
+                message: format!("hash conflict: expected {} but found {}", expected, existing.meta.sha256),
+                path: Some(args.path.display().to_string()),
+            }));
         }
     }
     if existing.meta.mixed_newlines {
-        return Err(anyhow::anyhow!(af_core::errors::AfError::Safety(
-            "mixed newline file: refuse to append without explicit normalization strategy".into()
-        )));
+        return Err(anyhow::anyhow!(af_core::errors::AfError::Safety {
+            code: "MIXED_NEWLINE".into(),
+            message: "mixed newline file: refuse to append without explicit normalization strategy".into(),
+            path: Some(args.path.display().to_string()),
+        }));
     }
-    let eol = existing.newline.sequence();
+    let _eol = existing.newline.sequence();
     if args.ensure_newline {
         let ends_with_nl = input.ends_with('\n') || input.ends_with('\r');
         if !ends_with_nl {
-            input.push_str(if matches!(existing.newline, NewlineStyle::None | NewlineStyle::Mixed | NewlineStyle::Lf) { "\n" } else { eol });
+            input.push_str(if matches!(existing.newline, NewlineStyle::CrLf) { "\r\n" } else if matches!(existing.newline, NewlineStyle::Cr) { "\r" } else { "\n" });
         }
     }
     let mut new_content = existing.content.clone();
     new_content.push_str(&input);
+    let bytes = encode_from_string(&new_content, &existing.detected.label, existing.detected.bom)?;
+    let sha = sha256_hex(&bytes);
 
     if args.dry_run {
         if json_mode {
-            println!("{}", json!({"ok": true, "command": "append", "path": args.path, "dryRun": true}));
+            let out = json!({"ok": true, "command": "append", "path": args.path.to_string_lossy(), "dryRun": true, "bytesAppended": input.len(), "encoding": existing.detected.label, "bom": existing.meta.bom, "eol": existing.meta.eol, "sha256": sha, "contentToAppend": input});
+            println!("{}", rjson::success(out));
         } else {
             println!("dry-run: would append {} bytes to {}", input.len(), args.path.display());
+            println!("encoding: {} bom: {} eol: {} finalSha256: {}", existing.detected.label, existing.meta.bom, existing.meta.eol, sha);
         }
         return Ok(());
     }
 
-    let bytes = encode_from_string(&new_content, &existing.detected.label, existing.detected.bom)?;
+    // basic state recheck before atomic replace
+    let recheck = read_text_file(&args.path, None).map_err(|e| anyhow::anyhow!(e))?;
+    if recheck.meta.sha256 != existing.meta.sha256 {
+        return Err(anyhow::anyhow!(af_core::errors::AfError::Conflict {
+            code: "HASH_CONFLICT".into(),
+            message: "file changed during append".into(),
+            path: Some(args.path.display().to_string()),
+        }));
+    }
     atomic_write(&args.path, &bytes)?;
-    let sha = sha256_hex(&bytes);
     if json_mode {
-        println!("{}", json!({"ok": true, "command": "append", "path": args.path, "bytesAppended": input.len(), "encoding": existing.detected.label, "bom": existing.meta.bom, "eol": existing.meta.eol, "sha256": sha}));
+        let out = json!({"ok": true, "command": "append", "path": args.path.to_string_lossy(), "bytesAppended": input.len(), "encoding": existing.detected.label, "bom": existing.meta.bom, "eol": existing.meta.eol, "sha256": sha});
+        println!("{}", rjson::success(out));
     } else {
         println!("appended {} bytes to {}", input.len(), args.path.display());
     }

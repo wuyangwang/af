@@ -1,42 +1,53 @@
-# AF Agent JSON Schema（草案）
+# AF Agent JSON 协议
 
-目标：为 Agent 模式提供稳定、可解析、无 ANSI 的 JSON 协议。
+> `schemaVersion`: `"1"`（所有 JSON 响应均包含）
 
-## 通用约定
-
-- stdout 仅输出结果 JSON；stderr 用于诊断（Agent 模式默认静默非必要日志）
-- 顶层字段：`ok`（bool）、`command`（string），失败时包含 `error`
-- 错误码稳定，不依赖本地化消息
-- Schema 版本化（建议顶层或 `meta.schemaVersion`，待定）
-
-## 成功示例（read）
-
+## 成功响应（通用）
 ```json
 {
   "ok": true,
-  "command": "read",
-  "path": "src/main.ts",
-  "encoding": "utf-8",
-  "bom": false,
-  "eol": "lf",
-  "startLine": 1,
-  "endLine": 12,
-  "content": "export const answer = 42;\n",
-  "sha256": "..."
+  "schemaVersion": "1",
+  "command": "read|write|append|search|patch",
+  ...
 }
 ```
 
-## 失败示例
-
+## 错误响应（通用）
 ```json
 {
   "ok": false,
+  "schemaVersion": "1",
   "error": {
-    "code": "AMBIGUOUS_ENCODING",
-    "message": "无法可靠判断文件编码，请显式指定 --encoding。",
-    "path": "legacy.txt"
+    "code": "STABLE_ERROR_CODE",
+    "message": "...",
+    "path": "..." 
   }
 }
 ```
+- `path` 可选
+- 常见错误码：`INVALID_INPUT`、`FILE_NOT_FOUND`、`PERMISSION_DENIED`、`IO_ERROR`、`AMBIGUOUS_ENCODING`、`BINARY_FILE`、`INVALID_ENCODING`、`DECODE_ERROR`、`ENCODE_ERROR`、`HASH_CONFLICT`、`MATCH_COUNT_MISMATCH`、`TARGET_EXISTS`、`MIXED_NEWLINE`、`STRICT_FORMAT_VIOLATION`、`PATH_TRAVERSAL`、`CONTEXT_MISMATCH`、`GENERAL_ERROR`
 
-> TODO: 为 read/write/append/search/patch 定义严格字段与类型。
+## `read`
+- 内容：`path, encoding, bom, eol, startLine, endLine, content, sha256`
+- 元信息（`--meta`）：`path, encoding, bom, eol, size, sha256, mixedNewlines`
+
+## `write`
+- dry-run：`path, dryRun, bytes, encoding, bom, eol, sha256`
+- 成功：`path, bytesWritten, encoding, bom, eol, sha256`
+
+## `append`
+- dry-run（新建）：`path, dryRun, created, bytes, encoding, bom, eol, sha256, contentToAppend`
+- dry-run（追加）：`path, dryRun, bytesAppended, encoding, bom, eol, sha256, contentToAppend`
+- 成功（新建）：`path, created, bytesWritten, sha256, encoding, bom, eol`
+- 成功（追加）：`path, bytesAppended, encoding, bom, eol, sha256`
+
+## `search`
+- `pattern, path, matches[]`
+- `matches[]`：`{path, line_number, column, line, before?:[{line_number,text}], after?:[{line_number,text}]}`
+
+## `patch`
+- dry-run：`path, dryRun, operations, beforeHash, afterHash, encoding, bom, eol`
+- 成功：`path, operations, beforeHash, afterHash, encoding, bom, eol`
+
+## `agent`
+- `--json`：`name, description, schemaVersionProtocol, globalFlags, commands, protocol, recommendedWorkflow, convenienceMethods, examples`（并包含通用 `ok/schemaVersion/command` 字段）

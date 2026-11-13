@@ -38,46 +38,44 @@ impl Default for WriteOptions {
 pub struct WriteOutcome {
     pub meta: FileMeta,
     pub bytes_written: usize,
+    pub content: String,
 }
 
 pub fn write_new_file(path: &Path, text: &str) -> Result<WriteOutcome, AfError> {
-    // New files: UTF-8 no BOM + LF
-    let normalized = normalize_newlines(text, NewlineStyle::Lf);
-    let bytes = encode_from_string(&normalized, "utf-8", Bom::None)?;
-    atomic_write(path, &bytes)?;
-    let newline = detect_newline(&normalized);
+    let outcome = plan_write(path, text, &WriteOptions::default())?;
+    atomic_write(path, &outcome.encoded_bytes)?;
     Ok(WriteOutcome {
-        bytes_written: bytes.len(),
-        meta: FileMeta {
-            encoding: "utf-8".into(),
-            bom: false,
-            eol: newline.as_str().into(),
-            size: bytes.len() as u64,
-            sha256: sha256_hex(&bytes),
-            mixed_newlines: false,
-        },
+        bytes_written: outcome.encoded_bytes.len(),
+        meta: outcome.meta,
+        content: outcome.content,
     })
 }
 
-pub fn write_with_options(path: &Path, text: &str, opts: &WriteOptions) -> Result<WriteOutcome, AfError> {
+#[derive(Debug, Clone)]
+pub struct WritePlan {
+    pub meta: FileMeta,
+    pub encoded_bytes: Vec<u8>,
+    pub content: String,
+}
+
+pub fn plan_write(path: &Path, text: &str, opts: &WriteOptions) -> Result<WritePlan, AfError> {
     if !path.exists() {
-        // New file: default UTF-8 no BOM + LF, allow explicit overrides
         let target_eol = opts.eol.unwrap_or(NewlineStyle::Lf);
         let content = normalize_newlines(text, target_eol);
-        let label = opts.encoding.clone().unwrap_or_else(|| "utf-8".to_string());
+        let label = opts.encoding.clone().unwrap_or_else(|| "utf-8".to_string()).to_ascii_lowercase();
         let bom = match opts.bom {
-            Some(true) if label.to_ascii_lowercase().starts_with("utf-8") => Bom::Utf8,
-            Some(true) if label.to_ascii_lowercase().starts_with("utf-16le") => Bom::Utf16Le,
-            Some(true) if label.to_ascii_lowercase().starts_with("utf-16be") => Bom::Utf16Be,
+            Some(true) if label.starts_with("utf-8") => Bom::Utf8,
+            Some(true) if label.starts_with("utf-16le") => Bom::Utf16Le,
+            Some(true) if label.starts_with("utf-16be") => Bom::Utf16Be,
             _ => Bom::None,
         };
         let bytes = encode_from_string(&content, &label, bom)?;
-        atomic_write(path, &bytes)?;
         let newline = detect_newline(&content);
-        return Ok(WriteOutcome {
-            bytes_written: bytes.len(),
+        return Ok(WritePlan {
+            encoded_bytes: bytes.clone(),
+            content: content.clone(),
             meta: FileMeta {
-                encoding: label.to_ascii_lowercase(),
+                encoding: label,
                 bom: !matches!(bom, Bom::None),
                 eol: newline.as_str().into(),
                 size: bytes.len() as u64,
@@ -87,11 +85,16 @@ pub fn write_with_options(path: &Path, text: &str, opts: &WriteOptions) -> Resul
         });
     }
 
-    let existing = read_text_file(path, None)?;
-    if matches!(opts.mode, EditMode::Preserve) && matches!(existing.newline, NewlineStyle::Mixed) && opts.eol.is_none() && !matches!(opts.mode, EditMode::Normalize) {
-        return Err(AfError::Safety(
-            "mixed newline file: refuse to modify in preserve mode without explicit --eol/--normalize".into(),
-        ));
+    let existing = read_text_file(path, opts.encoding.as_deref().or(None))?;
+    if matches!(opts.mode, EditMode::Preserve)
+        && matches!(existing.newline, NewlineStyle::Mixed)
+        && opts.eol.is_none()
+    {
+        return Err(AfError::Safety {
+            code: "MIXED_NEWLINE".into(),
+            message: "mixed newline file: refuse to modify in preserve mode without explicit --eol/--normalize".into(),
+            path: Some(path.display().to_string()),
+        });
     }
 
     let target_eol = match opts.mode {
@@ -99,14 +102,15 @@ pub fn write_with_options(path: &Path, text: &str, opts: &WriteOptions) -> Resul
         _ => opts.eol.unwrap_or(existing.newline),
     };
 
-    if matches!(opts.mode, EditMode::Strict) {
-        if matches!(existing.newline, NewlineStyle::Mixed) {
-            return Err(AfError::Safety("mixed newlines in strict mode".into()));
-        }
+    if matches!(opts.mode, EditMode::Strict) && matches!(existing.newline, NewlineStyle::Mixed) {
+        return Err(AfError::Safety {
+            code: "STRICT_FORMAT_VIOLATION".into(),
+            message: "mixed newlines in strict mode".into(),
+            path: Some(path.display().to_string()),
+        });
     }
 
     let content = normalize_newlines(text, target_eol);
-
     let mut label = match opts.mode {
         EditMode::Normalize => "utf-8".to_string(),
         _ => opts.encoding.clone().unwrap_or_else(|| existing.detected.label.clone()),
@@ -130,15 +134,19 @@ pub fn write_with_options(path: &Path, text: &str, opts: &WriteOptions) -> Resul
             && matches!(bom, Bom::None)
             && matches!(target_eol, NewlineStyle::Lf | NewlineStyle::None);
         if !ok {
-            return Err(AfError::Safety("file does not meet strict target format".into()));
+            return Err(AfError::Safety {
+                code: "STRICT_FORMAT_VIOLATION".into(),
+                message: "file does not meet strict target format (expected utf-8, no BOM, lf)".into(),
+                path: Some(path.display().to_string()),
+            });
         }
     }
 
     let bytes = encode_from_string(&content, &label, bom)?;
-    atomic_write(path, &bytes)?;
     let newline = detect_newline(&content);
-    Ok(WriteOutcome {
-        bytes_written: bytes.len(),
+    Ok(WritePlan {
+        encoded_bytes: bytes.clone(),
+        content: content.clone(),
         meta: FileMeta {
             encoding: label,
             bom: !matches!(bom, Bom::None),
@@ -147,6 +155,16 @@ pub fn write_with_options(path: &Path, text: &str, opts: &WriteOptions) -> Resul
             sha256: sha256_hex(&bytes),
             mixed_newlines: matches!(newline, NewlineStyle::Mixed),
         },
+    })
+}
+
+pub fn write_with_options(path: &Path, text: &str, opts: &WriteOptions) -> Result<WriteOutcome, AfError> {
+    let plan = plan_write(path, text, opts)?;
+    atomic_write(path, &plan.encoded_bytes)?;
+    Ok(WriteOutcome {
+        bytes_written: plan.encoded_bytes.len(),
+        meta: plan.meta,
+        content: plan.content,
     })
 }
 

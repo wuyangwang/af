@@ -68,9 +68,11 @@ fn parse_eol(s: &str) -> Option<NewlineStyle> {
 }
 
 pub fn run(args: WriteArgs, json_mode: bool) -> Result<()> {
+    af_core::path_safety::ensure_safe_path(&args.path).map_err(|e| anyhow::anyhow!(e))?;
     if args.path.exists() && !args.force {
-        return Err(anyhow::anyhow!(af_core::errors::AfError::Safety(
-            "target exists; pass --force to overwrite".into()
+        return Err(anyhow::anyhow!(af_core::errors::AfError::safety(
+            "TARGET_EXISTS",
+            format!("target exists; pass --force to overwrite: {}", args.path.display())
         )));
     }
     let input = read_input(&args)?;
@@ -78,14 +80,15 @@ pub fn run(args: WriteArgs, json_mode: bool) -> Result<()> {
         if args.path.exists() {
             let existing = af_core::reader::read_text_file(&args.path, None).map_err(|e| anyhow::anyhow!(e))?;
             if &existing.meta.sha256 != expected {
-                return Err(anyhow::anyhow!(af_core::errors::AfError::Conflict(format!(
-                    "hash conflict: expected {} but found {}",
-                    expected, existing.meta.sha256
-                ))));
+                return Err(anyhow::anyhow!(af_core::errors::AfError::Conflict {
+                    code: "HASH_CONFLICT".into(),
+                    message: format!("hash conflict: expected {} but found {}", expected, existing.meta.sha256),
+                    path: Some(args.path.display().to_string()),
+                }));
             }
         } else {
-            return Err(anyhow::anyhow!(af_core::errors::AfError::InvalidInput(
-                "--expected-hash provided but target file does not exist".into()
+            return Err(anyhow::anyhow!(af_core::errors::AfError::invalid_input(
+                "--expected-hash provided but target file does not exist"
             )));
         }
     }
@@ -108,10 +111,24 @@ pub fn run(args: WriteArgs, json_mode: bool) -> Result<()> {
     };
 
     if args.dry_run {
+        let plan = af_core::writer::plan_write(&args.path, &input, &opts).map_err(|e| anyhow::anyhow!(e))?;
         if json_mode {
-            println!("{}", json!({"ok": true, "command": "write", "path": args.path, "dryRun": true}));
+            let out = json!({
+                "ok": true,
+                "command": "write",
+                "path": args.path.to_string_lossy(),
+                "dryRun": true,
+                "bytes": plan.meta.size,
+                "encoding": plan.meta.encoding,
+                "bom": plan.meta.bom,
+                "eol": plan.meta.eol,
+                "sha256": plan.meta.sha256
+            });
+            println!("{}", af_render::json::success(out));
         } else {
-            println!("dry-run: would write {} chars to {}", input.chars().count(), args.path.display());
+            println!("dry-run: would write {} bytes to {}", plan.meta.size, args.path.display());
+            println!("encoding: {} bom: {} eol: {}", plan.meta.encoding, plan.meta.bom, plan.meta.eol);
+            println!("sha256: {}", plan.meta.sha256);
         }
         return Ok(());
     }
@@ -119,16 +136,17 @@ pub fn run(args: WriteArgs, json_mode: bool) -> Result<()> {
     let outcome = write_with_options(&args.path, &input, &opts).map_err(|e| anyhow::anyhow!(e))?;
 
     if json_mode {
-        println!("{}", json!({
+        let out = json!({
             "ok": true,
             "command": "write",
-            "path": args.path,
+            "path": args.path.to_string_lossy(),
             "bytesWritten": outcome.bytes_written,
             "encoding": outcome.meta.encoding,
             "bom": outcome.meta.bom,
             "eol": outcome.meta.eol,
             "sha256": outcome.meta.sha256
-        }));
+        });
+        println!("{}", af_render::json::success(out));
     } else {
         println!("wrote {} bytes to {}", outcome.bytes_written, args.path.display());
     }

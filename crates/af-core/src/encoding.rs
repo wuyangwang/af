@@ -42,7 +42,7 @@ pub fn decode_to_string(bytes: &[u8], explicit: Option<&str>) -> Result<(String,
     match bom {
         Bom::Utf8 => {
             let text = std::str::from_utf8(&bytes[offset..])
-                .map_err(|e| AfError::Encoding(format!("invalid UTF-8 with BOM: {e}")))?;
+                .map_err(|e| AfError::encoding("INVALID_ENCODING", format!("invalid UTF-8 with BOM: {e}")))?;
             Ok((
                 text.to_string(),
                 DetectedEncoding {
@@ -55,7 +55,7 @@ pub fn decode_to_string(bytes: &[u8], explicit: Option<&str>) -> Result<(String,
         Bom::Utf16Le => {
             let (cow, _, had_errors) = encoding_rs::UTF_16LE.decode(&bytes[offset..]);
             if had_errors {
-                return Err(AfError::Encoding("invalid UTF-16LE content".into()));
+                return Err(AfError::encoding("INVALID_ENCODING", "invalid UTF-16LE content"));
             }
             Ok((
                 cow.into_owned(),
@@ -69,7 +69,7 @@ pub fn decode_to_string(bytes: &[u8], explicit: Option<&str>) -> Result<(String,
         Bom::Utf16Be => {
             let (cow, _, had_errors) = encoding_rs::UTF_16BE.decode(&bytes[offset..]);
             if had_errors {
-                return Err(AfError::Encoding("invalid UTF-16BE content".into()));
+                return Err(AfError::encoding("INVALID_ENCODING", "invalid UTF-16BE content"));
             }
             Ok((
                 cow.into_owned(),
@@ -83,12 +83,13 @@ pub fn decode_to_string(bytes: &[u8], explicit: Option<&str>) -> Result<(String,
         Bom::None => {
             if let Some(label) = explicit {
                 let enc = encoding_rs::Encoding::for_label(label.as_bytes())
-                    .ok_or_else(|| AfError::InvalidInput(format!("unknown encoding: {label}")))?;
+                    .ok_or_else(|| AfError::invalid_input(format!("unknown encoding: {label}")))?;
                 let (cow, _, had_errors) = enc.decode(bytes);
                 if had_errors {
-                    return Err(AfError::Encoding(format!(
-                        "failed to decode as {label} without loss"
-                    )));
+                    return Err(AfError::encoding(
+                        "DECODE_ERROR",
+                        format!("failed to decode as {label} without loss"),
+                    ));
                 }
                 let is_utf8 = enc == encoding_rs::UTF_8;
                 return Ok((
@@ -109,8 +110,9 @@ pub fn decode_to_string(bytes: &[u8], explicit: Option<&str>) -> Result<(String,
                         is_utf8: true,
                     },
                 )),
-                Err(_) => Err(AfError::Encoding(
-                    "AMBIGUOUS_ENCODING: 无法可靠判断文件编码，请显式指定 --encoding".into(),
+                Err(_) => Err(AfError::encoding(
+                    "AMBIGUOUS_ENCODING",
+                    "无法可靠判断文件编码，请显式指定 --encoding",
                 )),
             }
         }
@@ -153,12 +155,13 @@ pub fn encode_from_string(
         }
         other => {
             let enc = encoding_rs::Encoding::for_label(other.as_bytes())
-                .ok_or_else(|| AfError::InvalidInput(format!("unknown encoding: {other}")))?;
+                .ok_or_else(|| AfError::invalid_input(format!("unknown encoding: {other}")))?;
             let (cow, _, unmappable) = enc.encode(text);
             if unmappable {
-                return Err(AfError::Encoding(format!(
-                    "cannot losslessly encode text as {other}"
-                )));
+                return Err(AfError::encoding(
+                    "ENCODE_ERROR",
+                    format!("cannot losslessly encode text as {other}"),
+                ));
             }
             Ok(cow.into_owned())
         }

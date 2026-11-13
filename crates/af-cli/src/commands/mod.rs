@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod append;
 pub mod patch;
 pub mod read;
@@ -15,5 +16,6 @@ pub fn dispatch(cli: Cli) -> Result<()> {
         crate::cli::Commands::Append(args) => append::run(args, json),
         crate::cli::Commands::Search(args) => search::run(args, json),
         crate::cli::Commands::Patch(args) => patch::run(args, json),
+        crate::cli::Commands::Agent(args) => agent::run(args, json),
     }
 }
