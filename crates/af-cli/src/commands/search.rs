@@ -18,6 +18,9 @@ pub struct SearchArgs {
     /// File type filter (e.g. ts, rs)
     #[arg(long = "type")]
     pub file_type: Option<String>,
+    /// Glob pattern filter (e.g. "*.rs")
+    #[arg(long)]
+    pub glob: Option<String>,
     /// Lines of context before match
     #[arg(long)]
     pub before: Option<usize>,
@@ -40,6 +43,7 @@ pub fn run(args: SearchArgs, json_mode: bool) -> Result<()> {
         hidden: args.hidden,
         no_ignore: args.no_ignore,
         file_type: args.file_type,
+        glob: args.glob,
         before: args.before.unwrap_or(0),
         after: args.after.unwrap_or(0),
         ignore_case: args.ignore_case,

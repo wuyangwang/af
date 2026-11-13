@@ -27,6 +27,18 @@ cargo test
 cargo run -p af-cli -- --help
 ```
 
+## CI / Release
+
+- CI：`.github/workflows/ci.yml`（Windows/macOS 上构建、测试、CLI smoke test）
+- Release：`.github/workflows/release.yml`（tag `v*` 触发，构建 Windows x64 与 macOS x64/arm64 产物并发布到 GitHub Releases）
+- 本地打包脚本：`scripts/release.ps1`（Windows）、`scripts/release.sh`（macOS/Linux）
+
+## Scoop（Windows）
+
+- Manifest 模板：`scoop/af.json`
+- 发布说明与命令：`scoop/PUBLISHING.md`
+- 自动更新 bucket 脚本：`scripts/scoop-publish.ps1`
+
 ## 项目结构
 
 - `crates/af-cli`：CLI 入口与命令路由

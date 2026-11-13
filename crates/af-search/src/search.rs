@@ -49,6 +49,11 @@ pub fn search(
     builder.git_global(!filters.no_ignore);
     builder.git_exclude(!filters.no_ignore);
     builder.ignore(!filters.no_ignore);
+    if let Some(glob) = &filters.glob {
+        let mut overrides = ignore::overrides::OverrideBuilder::new(root);
+        overrides.add(glob)?;
+        builder.overrides(overrides.build()?);
+    }
 
     let mut result = SearchResult::default();
     for entry in builder.build() {

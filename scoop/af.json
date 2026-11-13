@@ -1,0 +1,23 @@
+{
+  "version": "0.1.0",
+  "description": "AF (Agent Files) - safe file ops and search CLI for AI coding agents",
+  "homepage": "https://github.com/<owner>/<repo>",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/<owner>/<repo>/releases/download/v0.1.0/af-v0.1.0-x86_64-pc-windows-msvc.zip",
+      "hash": "<SHA256>"
+    }
+  },
+  "bin": "af.exe",
+  "checkver": {
+    "github": "https://github.com/<owner>/<repo>"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/<owner>/<repo>/releases/download/v$version/af-v$version-x86_64-pc-windows-msvc.zip"
+      }
+    }
+  }
+}
