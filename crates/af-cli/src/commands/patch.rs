@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Args;
+use serde_json::json;
 use std::path::PathBuf;
 
 #[derive(Debug, Args)]
@@ -23,6 +24,11 @@ pub struct PatchArgs {
     pub expected_hash: Option<String>,
 }
 
-pub fn run(_args: PatchArgs) -> Result<()> {
-    todo!("af patch: not implemented yet")
+pub fn run(_args: PatchArgs, json_mode: bool) -> Result<()> {
+    if json_mode {
+        println!("{}", json!({"ok": false, "command": "patch", "error": {"code": "NOT_IMPLEMENTED", "message": "af patch not implemented yet (Phase 3)"}}));
+    } else {
+        println!("af patch: not implemented yet (Phase 3)");
+    }
+    Ok(())
 }

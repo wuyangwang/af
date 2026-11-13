@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Args;
+use serde_json::json;
 use std::path::PathBuf;
 
 #[derive(Debug, Args)]
@@ -29,6 +30,11 @@ pub struct SearchArgs {
     pub no_ignore: bool,
 }
 
-pub fn run(_args: SearchArgs) -> Result<()> {
-    todo!("af search: not implemented yet")
+pub fn run(_args: SearchArgs, json_mode: bool) -> Result<()> {
+    if json_mode {
+        println!("{}", json!({"ok": false, "command": "search", "error": {"code": "NOT_IMPLEMENTED", "message": "af search not implemented yet (Phase 2)"}}));
+    } else {
+        println!("af search: not implemented yet (Phase 2)");
+    }
+    Ok(())
 }
