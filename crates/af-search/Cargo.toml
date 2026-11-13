@@ -1,0 +1,19 @@
+[package]
+name = "af-search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+af-core = { path = "../af-core" }
+anyhow.workspace = true
+thiserror.workspace = true
+grep.workspace = true
+ignore.workspace = true
+regex.workspace = true
+grep-printer.workspace = true
+grep-searcher.workspace = true
+grep-regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "af-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "af"
+path = "src/main.rs"
+
+[dependencies]
+af-core = { path = "../af-core" }
+af-search = { path = "../af-search" }
+af-render = { path = "../af-render" }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

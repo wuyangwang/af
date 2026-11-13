@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "type": "replace",
+      "old": "const oldName = 1;",
+      "new": "const newName = 1;",
+      "expectedMatches": 1
+    }
+  ]
+}

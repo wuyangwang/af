@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/af-cli",
+  "crates/af-core",
+  "crates/af-search",
+  "crates/af-render",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["AF Contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+encoding_rs = "0.8"
+syntect = "5"
+similar = "2"
+tempfile = "3"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# ripgrep crates (search)
+grep = "0.3"
+ignore = "0.4"
+regex = "1"
+grep-printer = "0.2"
+grep-searcher = "0.1"
+grep-regex = "0.1"
+walkdir = "2"

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "defaults": {
+    "newFileEncoding": "utf-8",
+    "newFileBom": false,
+    "newFileEol": "lf",
+    "editMode": "preserve",
+    "syntaxHighlight": true,
+    "theme": "base16-ocean.dark"
+  },
+  "agent": {
+    "output": "json",
+    "disableAnsi": true,
+    "disablePager": true
+  },
+  "safety": {
+    "checkFileHash": true,
+    "rejectAmbiguousEncoding": true,
+    "rejectBinaryFiles": true,
+    "atomicWrite": true,
+    "backup": false
+  },
+  "search": {
+    "respectGitIgnore": true,
+    "followSymlinks": false
+  }
+}

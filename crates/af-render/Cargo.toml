@@ -1,0 +1,14 @@
+[package]
+name = "af-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+af-core = { path = "../af-core" }
+anyhow.workspace = true
+syntect.workspace = true
+similar.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
