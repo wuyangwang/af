@@ -68,6 +68,9 @@ pub fn run(args: AppendArgs, json_mode: bool) -> Result<()> {
     }
 
     let existing = read_text_file(&args.path, None)?;
+    if existing.meta.mixed_newlines {
+        bail!("mixed newline file: refuse to append without explicit normalization strategy");
+    }
     let eol = existing.newline.sequence();
     if args.ensure_newline {
         let ends_with_nl = input.ends_with('\n') || input.ends_with('\r');

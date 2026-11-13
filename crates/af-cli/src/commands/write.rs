@@ -1,4 +1,5 @@
-use af_core::writer::{write_new_file, write_preserving, EditMode};
+use af_core::newline::NewlineStyle;
+use af_core::writer::{write_with_options, EditMode, WriteOptions};
 use anyhow::{bail, Result};
 use clap::Args;
 use serde_json::json;
@@ -19,12 +20,18 @@ pub struct WriteArgs {
     /// Explicit encoding (e.g. utf-8, gbk)
     #[arg(long)]
     pub encoding: Option<String>,
+    /// Write UTF-8 BOM (true/false). If omitted, preserve or default.
+    #[arg(long)]
+    pub bom: Option<bool>,
     /// Line ending: lf, crlf, cr
     #[arg(long)]
     pub eol: Option<String>,
     /// Normalize output to UTF-8 no BOM + LF
     #[arg(long)]
     pub normalize: bool,
+    /// Strict mode: reject if target format does not meet policy
+    #[arg(long)]
+    pub strict: bool,
     /// Preview only, do not write
     #[arg(long)]
     pub dry_run: bool,
@@ -40,7 +47,6 @@ fn read_input(args: &WriteArgs) -> Result<String> {
     if let Some(from) = &args.from {
         return Ok(fs::read_to_string(from)?);
     }
-    // default to stdin when --stdin or when data piped? keep simple: require --stdin if no --from
     if args.stdin || args.from.is_none() {
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf)?;
@@ -49,27 +55,48 @@ fn read_input(args: &WriteArgs) -> Result<String> {
     bail!("no input provided");
 }
 
+fn parse_eol(s: &str) -> Option<NewlineStyle> {
+    match s.to_ascii_lowercase().as_str() {
+        "lf" => Some(NewlineStyle::Lf),
+        "crlf" => Some(NewlineStyle::CrLf),
+        "cr" => Some(NewlineStyle::Cr),
+        _ => None,
+    }
+}
+
 pub fn run(args: WriteArgs, json_mode: bool) -> Result<()> {
     if args.path.exists() && !args.force {
         bail!("target exists; pass --force to overwrite");
     }
     let input = read_input(&args)?;
-    let mode = if args.normalize { EditMode::Normalize } else { EditMode::Preserve };
+    let mode = if args.strict {
+        EditMode::Strict
+    } else if args.normalize {
+        EditMode::Normalize
+    } else {
+        EditMode::Preserve
+    };
+    let eol = args.eol.as_deref().and_then(parse_eol);
+    if args.eol.is_some() && eol.is_none() {
+        bail!("invalid --eol value (expected lf|crlf|cr)");
+    }
+    let opts = WriteOptions {
+        mode,
+        encoding: args.encoding.clone(),
+        bom: args.bom,
+        eol,
+    };
 
     if args.dry_run {
         if json_mode {
             println!("{}", json!({"ok": true, "command": "write", "path": args.path, "dryRun": true}));
         } else {
-            println!("dry-run: would write {} bytes to {}", input.len(), args.path.display());
+            println!("dry-run: would write {} chars to {}", input.chars().count(), args.path.display());
         }
         return Ok(());
     }
 
-    let outcome = if args.path.exists() {
-        write_preserving(&args.path, &input, mode)?
-    } else {
-        write_new_file(&args.path, &input)?
-    };
+    let outcome = write_with_options(&args.path, &input, &opts)?;
 
     if json_mode {
         println!("{}", json!({

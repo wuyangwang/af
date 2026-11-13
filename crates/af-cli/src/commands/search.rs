@@ -1,3 +1,5 @@
+use af_search::filters::SearchFilters;
+use af_search::search::search;
 use anyhow::Result;
 use clap::Args;
 use serde_json::json;
@@ -30,11 +32,30 @@ pub struct SearchArgs {
     pub no_ignore: bool,
 }
 
-pub fn run(_args: SearchArgs, json_mode: bool) -> Result<()> {
+pub fn run(args: SearchArgs, json_mode: bool) -> Result<()> {
+    let filters = SearchFilters {
+        hidden: args.hidden,
+        no_ignore: args.no_ignore,
+        file_type: args.file_type,
+        before: args.before.unwrap_or(0),
+        after: args.after.unwrap_or(0),
+    };
+    let result = search(&args.pattern, &args.path, args.regex, &filters)?;
     if json_mode {
-        println!("{}", json!({"ok": false, "command": "search", "error": {"code": "NOT_IMPLEMENTED", "message": "af search not implemented yet (Phase 2)"}}));
+        println!("{}", json!({
+            "ok": true,
+            "command": "search",
+            "pattern": args.pattern,
+            "path": args.path,
+            "matches": result.matches
+        }));
     } else {
-        println!("af search: not implemented yet (Phase 2)");
+        for m in &result.matches {
+            println!("{}:{}:{}:{}", m.path, m.line_number, m.column, m.line);
+        }
+        if result.matches.is_empty() {
+            println!("no matches");
+        }
     }
     Ok(())
 }
