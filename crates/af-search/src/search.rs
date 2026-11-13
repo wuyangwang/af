@@ -9,11 +9,21 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ContextLine {
+    pub line_number: usize,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchMatch {
     pub path: String,
     pub line_number: usize,
     pub column: usize,
     pub line: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub before: Vec<ContextLine>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub after: Vec<ContextLine>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -71,13 +81,28 @@ pub fn search(
             Ok(t) => t,
             Err(_) => continue,
         };
-        for (i, line) in text.lines().enumerate() {
+        let lines: Vec<&str> = text.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
             if let Some(m) = re.find(line) {
+                let before_start = i.saturating_sub(filters.before);
+                let before = lines[before_start..i]
+                    .iter()
+                    .enumerate()
+                    .map(|(j, t)| ContextLine { line_number: before_start + j + 1, text: (*t).to_string() })
+                    .collect();
+                let after_end = (i + 1 + filters.after).min(lines.len());
+                let after = lines[i + 1..after_end]
+                    .iter()
+                    .enumerate()
+                    .map(|(j, t)| ContextLine { line_number: i + 2 + j, text: (*t).to_string() })
+                    .collect();
                 result.matches.push(SearchMatch {
                     path: path.to_string_lossy().to_string(),
                     line_number: i + 1,
                     column: m.start() + 1,
-                    line: line.to_string(),
+                    line: (*line).to_string(),
+                    before,
+                    after,
                 });
             }
         }

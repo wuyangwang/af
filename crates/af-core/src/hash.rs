@@ -9,3 +9,14 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", result)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hashes_empty_string() {
+        let h = sha256_hex(b"");
+        assert_eq!(h.len(), 64);
+    }
+}
+

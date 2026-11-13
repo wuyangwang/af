@@ -51,7 +51,16 @@ pub fn run(args: SearchArgs, json_mode: bool) -> Result<()> {
         }));
     } else {
         for m in &result.matches {
+            for b in &m.before {
+                println!("{}-{}-{}", m.path, b.line_number, b.text);
+            }
             println!("{}:{}:{}:{}", m.path, m.line_number, m.column, m.line);
+            for a in &m.after {
+                println!("{}-{}-{}", m.path, a.line_number, a.text);
+            }
+            if !m.before.is_empty() || !m.after.is_empty() {
+                println!("--");
+            }
         }
         if result.matches.is_empty() {
             println!("no matches");

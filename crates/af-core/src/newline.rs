@@ -98,3 +98,23 @@ pub fn normalize_newlines(text: &str, style: NewlineStyle) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_lf_crlf_cr_mixed() {
+        assert_eq!(detect_newline("a\nb\n"), NewlineStyle::Lf);
+        assert_eq!(detect_newline("a\r\nb\r\n"), NewlineStyle::CrLf);
+        assert_eq!(detect_newline("a\rb\r"), NewlineStyle::Cr);
+        assert_eq!(detect_newline("a\nb\r\n"), NewlineStyle::Mixed);
+        assert_eq!(detect_newline("abc"), NewlineStyle::None);
+    }
+
+    #[test]
+    fn normalizes_to_lf_and_crlf() {
+        assert_eq!(normalize_newlines("a\r\nb\r", NewlineStyle::Lf), "a\nb\n");
+        assert_eq!(normalize_newlines("a\nb\n", NewlineStyle::CrLf), "a\r\nb\r\n");
+    }
+}
+

@@ -38,6 +38,9 @@ pub struct WriteArgs {
     /// Allow overwriting an existing file
     #[arg(long)]
     pub force: bool,
+    /// Expected SHA-256 of existing file before overwrite
+    #[arg(long)]
+    pub expected_hash: Option<String>,
 }
 
 fn read_input(args: &WriteArgs) -> Result<String> {
@@ -69,6 +72,16 @@ pub fn run(args: WriteArgs, json_mode: bool) -> Result<()> {
         bail!("target exists; pass --force to overwrite");
     }
     let input = read_input(&args)?;
+    if let Some(expected) = &args.expected_hash {
+        if args.path.exists() {
+            let existing = af_core::reader::read_text_file(&args.path, None)?;
+            if &existing.meta.sha256 != expected {
+                bail!("hash conflict: expected {} but found {}", expected, existing.meta.sha256);
+            }
+        } else {
+            bail!("--expected-hash provided but target file does not exist");
+        }
+    }
     let mode = if args.strict {
         EditMode::Strict
     } else if args.normalize {

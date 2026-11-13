@@ -27,6 +27,9 @@ pub struct AppendArgs {
     /// Preview only, do not write
     #[arg(long)]
     pub dry_run: bool,
+    /// Expected SHA-256 of existing file before append
+    #[arg(long)]
+    pub expected_hash: Option<String>,
 }
 
 fn read_input(args: &AppendArgs) -> Result<String> {
@@ -68,6 +71,11 @@ pub fn run(args: AppendArgs, json_mode: bool) -> Result<()> {
     }
 
     let existing = read_text_file(&args.path, None)?;
+    if let Some(expected) = &args.expected_hash {
+        if &existing.meta.sha256 != expected {
+            bail!("hash conflict: expected {} but found {}", expected, existing.meta.sha256);
+        }
+    }
     if existing.meta.mixed_newlines {
         bail!("mixed newline file: refuse to append without explicit normalization strategy");
     }

@@ -49,21 +49,98 @@ struct ReplaceOp {
     expected_matches: Option<usize>,
 }
 
-fn read_spec(args: &PatchArgs) -> Result<PatchSpec> {
-    let data = if let Some(spec) = &args.spec {
-        fs::read_to_string(spec)?
+fn read_input_text(args: &PatchArgs) -> Result<String> {
+    if let Some(spec) = &args.spec {
+        Ok(fs::read_to_string(spec)?)
     } else if args.stdin {
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf)?;
-        buf
+        Ok(buf)
     } else {
         bail!("provide --spec <file> or --stdin");
-    };
-    Ok(serde_json::from_str(&data)?)
+    }
+}
+
+fn apply_unified_diff(original: &str, diff: &str) -> Result<(String, usize)> {
+    let orig_lines: Vec<&str> = original.split_inclusive('\n').collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut idx = 0usize;
+    let mut hunks = 0usize;
+
+    let mut lines = diff.lines().peekable();
+    // skip headers
+    while let Some(l) = lines.peek() {
+        if l.starts_with("@@") { break; }
+        lines.next();
+    }
+
+    while let Some(h) = lines.next() {
+        if !h.starts_with("@@") { continue; }
+        hunks += 1;
+        // parse @@ -a,b +c,d @@
+        let parts: Vec<&str> = h.split_whitespace().collect();
+        if parts.len() < 3 { bail!("invalid hunk header: {h}"); }
+        let old_part = parts[1].trim_start_matches('-');
+        let old_start: usize = old_part.split(',').next().unwrap_or("1").parse().unwrap_or(1);
+        let target = old_start.saturating_sub(1);
+        if target > orig_lines.len() { bail!("hunk out of range"); }
+        // copy unchanged lines before hunk
+        while idx < target {
+            out.push(orig_lines[idx].to_string());
+            idx += 1;
+        }
+        // apply hunk lines
+        while let Some(&l) = lines.peek() {
+            if l.starts_with("@@") { break; }
+            if l.starts_with("---") || l.starts_with("+++") { lines.next(); continue; }
+            let ch = l.chars().next().unwrap_or(' ');
+            let text = if l.len() >= 1 { &l[1..] } else { "" };
+            match ch {
+                ' ' => {
+                    if idx >= orig_lines.len() { bail!("context out of range"); }
+                    let src = orig_lines[idx].trim_end_matches(['\r', '\n']);
+                    if src != text { bail!("context mismatch while applying diff"); }
+                    out.push(orig_lines[idx].to_string());
+                    idx += 1;
+                    lines.next();
+                }
+                '-' => {
+                    if idx >= orig_lines.len() { bail!("remove out of range"); }
+                    let src = orig_lines[idx].trim_end_matches(['\r', '\n']);
+                    if src != text { bail!("remove mismatch while applying diff"); }
+                    idx += 1;
+                    lines.next();
+                }
+                '+' => {
+                    // try to preserve newline style of original; default \n
+                    let nl = if original.contains("\r\n") { "\r\n" } else { "\n" };
+                    if text.ends_with('\n') || text.ends_with('\r') {
+                        out.push(text.to_string());
+                    } else {
+                        out.push(format!("{text}{nl}"));
+                    }
+                    lines.next();
+                }
+                '\\' => { // "\ No newline at end of file"
+                    if let Some(last) = out.last_mut() {
+                        while last.ends_with('\n') || last.ends_with('\r') { last.pop(); }
+                    }
+                    lines.next();
+                }
+                _ => { lines.next(); }
+            }
+        }
+    }
+    // copy remainder
+    while idx < orig_lines.len() {
+        out.push(orig_lines[idx].to_string());
+        idx += 1;
+    }
+    Ok((out.concat(), hunks))
 }
 
 pub fn run(args: PatchArgs, json_mode: bool) -> Result<()> {
-    let spec = read_spec(&args)?;
+    let input = read_input_text(&args)?;
     let existing = read_text_file(&args.path, None)?;
     if let Some(expected) = &args.expected_hash {
         if &existing.meta.sha256 != expected {
@@ -71,27 +148,33 @@ pub fn run(args: PatchArgs, json_mode: bool) -> Result<()> {
         }
     }
 
-    let mut content = existing.content.clone();
-    let mut total_ops = 0usize;
-    for op in &spec.operations {
-        if op.op_type != "replace" {
-            bail!("unsupported operation type: {}", op.op_type);
+    let (mut content, total_ops) = if args.spec.is_some() || input.trim_start().starts_with('{') {
+        let spec: PatchSpec = serde_json::from_str(&input)?;
+        let mut c = existing.content.clone();
+        let mut ops = 0usize;
+        for op in &spec.operations {
+            if op.op_type != "replace" {
+                bail!("unsupported operation type: {}", op.op_type);
+            }
+            let count = c.matches(&op.old).count();
+            let expected = op.expected_matches.unwrap_or(1);
+            if count != expected {
+                bail!("match count mismatch: expected {}, found {}", expected, count);
+            }
+            c = c.replace(&op.old, &op.new);
+            ops += 1;
         }
-        let count = content.matches(&op.old).count();
-        let expected = op.expected_matches.unwrap_or(1);
-        if count != expected {
-            bail!("match count mismatch: expected {}, found {}", expected, count);
-        }
-        content = content.replace(&op.old, &op.new);
-        total_ops += 1;
-    }
+        (c, ops)
+    } else {
+        apply_unified_diff(&existing.content, &input)?
+    };
 
     let (label, bom, eol_style) = if args.normalize {
         ("utf-8".to_string(), af_core::encoding::Bom::None, NewlineStyle::Lf)
     } else {
         (existing.detected.label.clone(), existing.detected.bom, existing.newline)
     };
-    let content = normalize_newlines(&content, eol_style);
+    content = normalize_newlines(&content, eol_style);
     let bytes = encode_from_string(&content, &label, bom)?;
     let new_hash = sha256_hex(&bytes);
 
@@ -117,7 +200,7 @@ pub fn run(args: PatchArgs, json_mode: bool) -> Result<()> {
             "beforeHash": existing.meta.sha256,
             "afterHash": new_hash,
             "encoding": label,
-            "bom": existing.meta.bom || args.normalize && false,
+            "bom": !matches!(bom, af_core::encoding::Bom::None),
             "eol": detect_newline(&content).as_str()
         }));
     } else {

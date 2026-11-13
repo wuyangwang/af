@@ -165,3 +165,35 @@ pub fn encode_from_string(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_utf8_bom() {
+        let (bom, off) = detect_bom(&[0xEF, 0xBB, 0xBF, b'a']);
+        assert_eq!(bom, Bom::Utf8);
+        assert_eq!(off, 3);
+    }
+
+    #[test]
+    fn decodes_utf8_no_bom() {
+        let (s, det) = decode_to_string(b"hello", None).unwrap();
+        assert_eq!(s, "hello");
+        assert_eq!(det.label, "utf-8");
+        assert_eq!(det.bom, Bom::None);
+    }
+
+    #[test]
+    fn rejects_ambiguous_without_explicit() {
+        let bytes = vec![0xC4, 0xE3, 0xBA, 0xC3]; // "你好" in GBK
+        assert!(decode_to_string(&bytes, None).is_err());
+    }
+
+    #[test]
+    fn encodes_utf8_with_bom() {
+        let bytes = encode_from_string("hi", "utf-8", Bom::Utf8).unwrap();
+        assert_eq!(&bytes[..3], &[0xEF, 0xBB, 0xBF]);
+    }
+}
+
